@@ -1,29 +1,32 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from ip_tracking.models import BlockedIP
+from django.core.validators import validate_ipv46_address
+from django.core.exceptions import ValidationError
 
 class Command(BaseCommand):
-    """
-    Command to block an IP address by adding it to the BlockedIP model.
-    Usage: python manage.py block_ip <ip_address>
-    """
-
-    help = 'Block an IP address by adding it to the BlockedIP model.'
+    help = 'Blocks an IP address'
 
     def add_arguments(self, parser):
-        parser.add_argument('ip_address', type=str, help='The IP address to block.')
+        parser.add_argument('ip_addresses', nargs='+', type=str,
+                          help='IP address(es) to block')
 
-    def handle(self, *args, **kwargs):
-        ip_address = kwargs['ip_address']
-        block_ip(ip_address)
-
-def block_ip(ip_address):
-    """
-    Block an IP address by adding it to the BlockedIP model.
-    """
-
-    if not BlockedIP.objects.filter(ip_address=ip_address).exists():
-        blocked_ip = BlockedIP(ip_address=ip_address)
-        blocked_ip.save()
-        print(f"Blocked IP: {ip_address}")
-    else:
-        print(f"IP {ip_address} is already blocked.")
+    def handle(self, *args, **options):
+        for ip in options['ip_addresses']:
+            try:
+                # Validate IP address format
+                validate_ipv46_address(ip)
+                
+                # Create blocked IP entry if it doesn't exist
+                blocked_ip, created = BlockedIP.objects.get_or_create(ip_address=ip)
+                
+                if created:
+                    self.stdout.write(
+                        self.style.SUCCESS(f'Successfully blocked IP "{ip}"')
+                    )
+                else:
+                    self.stdout.write(
+                        self.style.WARNING(f'IP "{ip}" was already blocked')
+                    )
+                    
+            except ValidationError:
+                raise CommandError(f'Invalid IP address format: "{ip}"')
